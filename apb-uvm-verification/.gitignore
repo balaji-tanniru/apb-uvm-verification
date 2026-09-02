@@ -1,0 +1,5 @@
+sim_build/
+work/
+transcript
+vsim.wlf
+*.vcd

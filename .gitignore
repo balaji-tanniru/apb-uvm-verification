@@ -1,0 +1,3 @@
+sim_build/
+proof/*.vcd
+*.vvp
