@@ -37,4 +37,4 @@ CHECK_PASS: read inserted a PREADY wait state
 CHECK_PASS: read error response correct
 CHECK_PASS: all APB protocol and data checks passed
 APB_TEST_PASS checks=37 errors=0
-tb/smoke/apb_tb.sv:117: $finish called at 440000 (1ps)
+tb/smoke/apb_tb.sv:120: $finish called at 440000 (1ps)

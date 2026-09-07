@@ -25,4 +25,5 @@ module tb_top;
         uvm_config_db#(virtual apb_if)::set(null, "*", "vif", vif);
         run_test("apb_test");
     end
+  initial begin #1ms; `uvm_fatal("TIMEOUT","APB UVM timeout") end
 endmodule
