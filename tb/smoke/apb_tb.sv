@@ -18,6 +18,7 @@ module apb_tb;
     always #5 PCLK = ~PCLK;
 
     apb_slave dut (.*);
+  apb_assertions apb_chk(.PCLK,.PRESETn,.PSEL,.PENABLE,.PWRITE,.PREADY,.PADDR,.PWDATA);
 
     task automatic check(input logic condition, input string message);
         begin
@@ -110,8 +111,10 @@ module apb_tb;
         check(errors == 0, "all APB protocol and data checks passed");
         if (errors == 0)
             $display("APB_TEST_PASS checks=%0d errors=%0d", checks, errors);
-        else
+        else begin
             $display("APB_TEST_FAIL checks=%0d errors=%0d", checks, errors);
+            $fatal(1);
+        end
 
         #10;
         $finish;

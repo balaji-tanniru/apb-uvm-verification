@@ -1,3 +1,13 @@
+# APB UVM Verification
+
+## Verification status
+
+The portable smoke flow compiles the assertion checker with an Icarus-compatible procedural implementation. It was not executed here because Icarus was not installed. The bound SVA form and UVM environment were not run here.
+
+## Repository
+
+This repository contains the RTL/testbench/automation sources for the project. Review fixes are summarized in the package-level `CHANGES.md`.
+
 # AMBA APB Protocol Verification
 
 This is my third SystemVerilog verification project.

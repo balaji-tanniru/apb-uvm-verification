@@ -8,11 +8,13 @@ package apb_pkg;
         rand bit [31:0] data;
         bit [31:0] read_data;
         bit error;
+        bit keep_selected;
         constraint aligned_c { address[1:0] == 0; }
         `uvm_object_utils_begin(apb_item)
             `uvm_field_int(write, UVM_ALL_ON)
             `uvm_field_int(address, UVM_ALL_ON)
             `uvm_field_int(data, UVM_ALL_ON)
+            `uvm_field_int(keep_selected, UVM_ALL_ON)
         `uvm_object_utils_end
         function new(string name="apb_item"); super.new(name); endfunction
     endclass
@@ -24,9 +26,27 @@ package apb_pkg;
             repeat (50) begin
                 req = apb_item::type_id::create("req");
                 start_item(req);
-                assert(req.randomize() with { address < 8'h40; });
+                if (!req.randomize() with { address < 8'h40; }) `uvm_fatal("RAND","apb_item randomization failed")
                 finish_item(req);
             end
+        endtask
+    endclass
+
+    class apb_error_sequence extends uvm_sequence #(apb_item);
+        `uvm_object_utils(apb_error_sequence)
+        function new(string n="apb_error_sequence"); super.new(n); endfunction
+        task body();
+            req=apb_item::type_id::create("misaligned"); start_item(req); req.write=0; req.address=8'h03; req.data=0; finish_item(req);
+            req=apb_item::type_id::create("out_of_range"); start_item(req); req.write=1; req.address=8'h40; req.data=32'hBAD0_ADD0; finish_item(req);
+        endtask
+    endclass
+
+    class apb_back_to_back_sequence extends uvm_sequence #(apb_item);
+        `uvm_object_utils(apb_back_to_back_sequence)
+        function new(string n="apb_back_to_back_sequence"); super.new(n); endfunction
+        task body();
+            req=apb_item::type_id::create("first"); start_item(req); req.write=1; req.address=8'h08; req.data=32'h1111_2222; req.keep_selected=1; finish_item(req);
+            req=apb_item::type_id::create("second"); start_item(req); req.write=1; req.address=8'h0c; req.data=32'h3333_4444; finish_item(req);
         endtask
     endclass
 
@@ -47,7 +67,7 @@ package apb_pkg;
                 @(negedge vif.PCLK); vif.PENABLE=1;
                 do @(negedge vif.PCLK); while (!vif.PREADY);
                 req.read_data=vif.PRDATA; req.error=vif.PSLVERR;
-                vif.PSEL=0; vif.PENABLE=0;
+                vif.PSEL=req.keep_selected; vif.PENABLE=0;
                 seq_item_port.item_done();
             end
         endtask
@@ -74,10 +94,11 @@ package apb_pkg;
         endtask
     endclass
 
-    class apb_scoreboard extends uvm_subscriber #(apb_item);
+    class apb_scoreboard extends uvm_scoreboard;
         `uvm_component_utils(apb_scoreboard)
         bit [31:0] model [0:15];
-        function new(string n, uvm_component p); super.new(n,p); endfunction
+        uvm_analysis_imp #(apb_item, apb_scoreboard) imp;
+        function new(string n, uvm_component p); super.new(n,p); imp=new("imp",this); endfunction
         function void write(apb_item t);
             int index=t.address>>2;
             if (!t.error && t.write) model[index]=t.data;
@@ -92,7 +113,7 @@ package apb_pkg;
         covergroup cg;
             option.per_instance=1;
             rw: coverpoint sample.write;
-            addr: coverpoint sample.address { bins valid[]={[0:8'h3c]}; bins invalid=default; }
+            addr: coverpoint sample.address { bins valid[]={8'h00,8'h04,8'h08,8'h0c,8'h10,8'h14,8'h18,8'h1c,8'h20,8'h24,8'h28,8'h2c,8'h30,8'h34,8'h38,8'h3c}; bins invalid=default; }
             err: coverpoint sample.error;
             rw_x_err: cross rw, err;
         endgroup
@@ -105,11 +126,13 @@ package apb_pkg;
         uvm_sequencer #(apb_item) seqr; apb_driver drv; apb_monitor mon;
         function new(string n, uvm_component p); super.new(n,p); endfunction
         function void build_phase(uvm_phase phase);
-            seqr=uvm_sequencer#(apb_item)::type_id::create("seqr",this);
-            drv=apb_driver::type_id::create("drv",this);
             mon=apb_monitor::type_id::create("mon",this);
+            if (get_is_active() == UVM_ACTIVE) begin
+                seqr=uvm_sequencer#(apb_item)::type_id::create("seqr",this);
+                drv=apb_driver::type_id::create("drv",this);
+            end
         endfunction
-        function void connect_phase(uvm_phase phase); drv.seq_item_port.connect(seqr.seq_item_export); endfunction
+        function void connect_phase(uvm_phase phase); if (get_is_active() == UVM_ACTIVE) drv.seq_item_port.connect(seqr.seq_item_export); endfunction
     endclass
 
     class apb_env extends uvm_env;
@@ -122,7 +145,7 @@ package apb_pkg;
             cov=apb_coverage::type_id::create("cov",this);
         endfunction
         function void connect_phase(uvm_phase phase);
-            agent.mon.ap.connect(sb.analysis_export); agent.mon.ap.connect(cov.analysis_export);
+            agent.mon.ap.connect(sb.imp); agent.mon.ap.connect(cov.analysis_export);
         endfunction
     endclass
 
@@ -132,8 +155,8 @@ package apb_pkg;
         function new(string n, uvm_component p); super.new(n,p); endfunction
         function void build_phase(uvm_phase phase); env=apb_env::type_id::create("env",this); endfunction
         task run_phase(uvm_phase phase);
-            apb_sequence seq=apb_sequence::type_id::create("seq");
-            phase.raise_objection(this); seq.start(env.agent.seqr); phase.drop_objection(this);
+            apb_sequence seq=apb_sequence::type_id::create("seq"); apb_error_sequence err=apb_error_sequence::type_id::create("err"); apb_back_to_back_sequence b2b=apb_back_to_back_sequence::type_id::create("b2b");
+            phase.raise_objection(this); seq.start(env.agent.seqr); err.start(env.agent.seqr); b2b.start(env.agent.seqr); phase.drop_objection(this);
         endtask
     endclass
 endpackage
